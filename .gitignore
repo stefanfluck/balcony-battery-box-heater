@@ -1,0 +1,12 @@
+# Editor settings
+.vscode/
+
+# Python caches from running scripts on the PC
+__pycache__/
+*.pyc
+
+# Precompiled MicroPython files (mpy-cross, see README)
+*.mpy
+
+# Logs copied from the SD card
+benchlogs/
