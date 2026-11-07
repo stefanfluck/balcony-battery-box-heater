@@ -16,7 +16,7 @@ from datalog import DataLog
 from lib import ds3231
 from lib import st7789
 
-VERSION = "2.1"
+VERSION = "2.2"
 TICK_MS = 50
 RESET_WARN_S = 6 * 3600  # an unexpected (watchdog) reset is shown as warning this long
 ERROR_HOLD_S = 3600      # ERR stays active this long after the last failed loop cycle
@@ -43,6 +43,14 @@ def fmt(t, empty="", decimals=2):
 
 def fmt_lcd(t):
     return fmt(t, "--.-", config.TEMP_DECIMALS)
+
+
+def fmt_hours(s):
+    # Seconds as hours, at most 4 characters: "3.1h", "12h"
+    if s is None:
+        return "--"
+    h = s / 3600
+    return ("%.1fh" if h < 9.95 else "%.0fh") % h
 
 
 def is_night(hour):
@@ -98,8 +106,10 @@ GREEN = rgb565(40, 200, 80)
 BLUE = rgb565(40, 120, 200)
 YELLOW = rgb565(240, 200, 40)
 DARK = rgb565(50, 50, 50)
+GRAY = rgb565(140, 140, 140)
 LEVEL_COLORS = {status.OK: GREEN, status.WARN: YELLOW, status.ALARM: RED}
-BAR_H = 12  # status bar at the bottom of the LCD, below the second fault line
+BAR_H = 12  # status bar at the bottom of the LCD, one text line; grows for 2 lines
+COL_NOW, COL_MIN, COL_MAX = 68, 112, 156  # right edges of the table columns (px)
 
 # Hardware and state, filled in by setup()
 relay_pins = [None, None]
@@ -127,9 +137,8 @@ reset_warn_until_ms = 0
 reset_cause = ""
 consecutive_errors = 0
 last_error_ms = None
-current_night_min = None
-last_night_min = None
-in_night_prev = False
+night = None       # Stats of the running night (20:00-08:00), None by day
+last_night = None  # Stats of the last complete night
 last_t_in = None
 last_t_out = None
 
@@ -222,23 +231,27 @@ def today():
     return "%04d%02d%02d" % local_time()[:3]
 
 
-def update_night_min(t_in):
-    global current_night_min, last_night_min, in_night_prev
+def update_night(t_in, t_out):
+    """Night statistics. Returns the Stats to show: the running night, by day the last
+    complete night (None if there is none yet). The heater on-time is added in
+    control_cycle()."""
+    global night, last_night
     if not time_valid:
         return None
-    in_night = is_night(local_time()[3])
-    if in_night and not in_night_prev:
-        current_night_min = None
-    if (not in_night) and in_night_prev:
-        if current_night_min is not None:
-            last_night_min = current_night_min
-    if in_night and t_in is not None:
-        if current_night_min is None or t_in < current_night_min:
-            current_night_min = t_in
-    in_night_prev = in_night
-    if in_night:
-        return current_night_min
-    return last_night_min
+    if is_night(local_time()[3]):
+        if night is None:
+            night = Stats()
+        night.t_in.add(t_in)
+        night.t_out.add(t_out)
+        return night
+    if night is not None:
+        last_night = night
+        night = None
+        log_event("NIGHT", "in_min=%s in_max=%s out_min=%s out_max=%s pad1_h=%.2f pad2_h=%.2f" % (
+            fmt(last_night.t_in.min), fmt(last_night.t_in.max),
+            fmt(last_night.t_out.min), fmt(last_night.t_out.max),
+            last_night.on_s[0] / 3600, last_night.on_s[1] / 3600))
+    return last_night
 
 
 # ---------------------------------------------------------------- display
@@ -257,31 +270,56 @@ def splash():
     lcd.blit_buffer(buf, 0, 0, config.LCD_WIDTH, config.LCD_HEIGHT)
 
 
-def draw_ui(t_in, t_out, night_min):
+def rtext(s, x_right, y, color):
+    # Text right-aligned at x_right (8x8 font)
+    fb.text(s, x_right - 8 * len(s), y, color)
+
+
+def bar_lines(codes):
+    # Fault codes wrapped to the bar width (20 characters), at most 2 lines
+    lines = []
+    for code in codes:
+        if lines and len(lines[-1]) + 1 + len(code) <= 20:
+            lines[-1] += " " + code
+        else:
+            lines.append(code)
+    return lines[:2] or ["OK"]
+
+
+def draw_ui(t_in, t_out, nt):
+    # Table: now and night min/max (this night, by day the last one), see README Display
     w = config.LCD_WIDTH
     level = faults.level()
     fb.fill(BLACK)
 
-    fb.text("In  " + fmt_lcd(t_in) + "C", 0, 0, WHITE)
-    fb.text("Out " + fmt_lcd(t_out) + "C", 0, 12, WHITE)
-    fb.text("Night min " + fmt_lcd(night_min) + "C", 0, 24, WHITE)
-    fb.text("Stage %d (%s)" % (heat.stage, heat.source), 0, 36, WHITE)
+    fb.text("%02d:%02d" % local_time()[3:5] if time_valid else "--:--", 0, 0, WHITE)
+    for label, x in (("now", COL_NOW), ("min", COL_MIN), ("max", COL_MAX)):
+        rtext(label, x, 0, GRAY)
+    for y, label, t, agg in ((11, "In", t_in, nt and nt.t_in), (22, "Out", t_out, nt and nt.t_out)):
+        fb.text(label, 0, y, WHITE)
+        rtext(fmt_lcd(t), COL_NOW, y, WHITE)
+        rtext(fmt_lcd(agg and agg.min), COL_MIN, y, WHITE)
+        rtext(fmt_lcd(agg and agg.max), COL_MAX, y, WHITE)
 
+    fb.text("Stage %d %s" % (heat.stage, heat.source), 0, 33, WHITE)
     for p in (0, 1):
-        x = w - 44 + p * 22
-        fb.fill_rect(x, 0, 20, 10, RED if prev_relays[p] else DARK)
-        fb.text(str(p + 1), x + 6, 1, WHITE)
-    if time_valid:
-        fb.text("%02d:%02d" % local_time()[3:5], w - 40, 12, WHITE)
+        x = w - 30 + p * 16
+        fb.fill_rect(x, 32, 14, 10, RED if prev_relays[p] else DARK)
+        fb.text(str(p + 1), x + 3, 33, WHITE)
 
-    text = " ".join(faults.codes()) or "OK"
-    fb.text(text[:20], 0, 48, LEVEL_COLORS[level])
-    fb.text(text[20:40], 0, 60, LEVEL_COLORS[level])
+    fb.text("Night pads", 0, 44, GRAY)
+    rtext("%s %s" % (fmt_hours(nt and nt.on_s[0]), fmt_hours(nt and nt.on_s[1])), COL_MAX, 44, WHITE)
 
+    # Status bar, full width; the fault codes are written into it
     bar = LEVEL_COLORS[level]
     if level == status.OK and t_in is not None and t_in < config.STATUS_TEMP:
         bar = BLUE
-    fb.fill_rect(0, config.LCD_HEIGHT - BAR_H, w, BAR_H, bar)
+    lines = bar_lines(faults.codes())
+    top = config.LCD_HEIGHT - BAR_H - 11 * (len(lines) - 1)
+    fb.fill_rect(0, top, w, config.LCD_HEIGHT - top, bar)
+    for i, line in enumerate(lines):
+        fb.text(line, (w - 8 * len(line)) // 2, top + 2 + 11 * i,
+                BLACK if bar in (GREEN, YELLOW) else WHITE)
 
     lcd.blit_buffer(buf, 0, 0, config.LCD_WIDTH, config.LCD_HEIGHT)
 
@@ -430,8 +468,9 @@ def control_cycle(now):
         dt_s = (now - last_cycle_ms) / 1000
         for p in (0, 1):
             if prev_relays[p]:
-                interval.on_s[p] += dt_s
-                day_stats.on_s[p] += dt_s
+                for s in (interval, day_stats, night):
+                    if s is not None:
+                        s.on_s[p] += dt_s
     last_cycle_ms = now
 
     prev_stage = heat.stage
@@ -460,7 +499,7 @@ def control_cycle(now):
     interval.t_out.add(t_out)
     day_stats.t_in.add(t_in)
     day_stats.t_out.add(t_out)
-    night_min = update_night_min(t_in)
+    nt = update_night(t_in, t_out)
 
     if not datalog.ok and now >= next_sd_ms:
         next_sd_ms = now + config.SD_RETRY_S * 1000
@@ -488,7 +527,7 @@ def control_cycle(now):
     feed()
 
     if lcd is not None:
-        draw_ui(t_in, t_out, night_min)
+        draw_ui(t_in, t_out, nt)
     gc.collect()
 
 

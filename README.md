@@ -78,11 +78,28 @@ Status signal (LCD, visible through the window)
 A new fault flashes at once, then every `FLASH_INTERVAL_S` for `FLASH_MS`. A hung
 firmware is reset by the watchdog; the clock on the screen shows whether it updates.
 
-Display (0.96" LCD)
-- Inside / outside temperature, minimum of the night (20:00–08:00), clock.
+Display (0.96" LCD), updated once a minute
+
+```
+21:43  now  min  max
+In    14.2 12.8 15.1
+Out   -3.5 -4.2  2.0
+Stage 1 in     [1][2]
+Night pads  3.1h 0.4h
+[######## OK ########]
+```
+
+- Clock, then inside and outside temperature: `now`, and `min`/`max` of the night
+  (20:00–08:00). During the night it shows the running night, by day the last
+  complete night.
 - Heating stage and control source (`in`, `out`, `failsafe`), pad boxes (red = heating).
-- Active fault codes in yellow/red. Status bar: green OK, blue OK but below
-  `STATUS_TEMP`, yellow warning, red alarm.
+- `Night pads`: how long pad 1 and pad 2 heated in that night. Close to 12 h means the
+  pads have no reserve left.
+- Status bar over the full width: green OK, blue OK but below `STATUS_TEMP`, yellow
+  warning, red alarm. The active fault codes are written into it; with many codes it
+  grows to two lines.
+- The night values are kept in RAM: after a restart by day they show `--.-` until the
+  next night.
 - At boot: color test (red, green, blue blocks) and a white frame to check the offsets.
 
 Logging (SD card)
@@ -90,7 +107,9 @@ Logging (SD card)
   `timestamp,uptime_s,t_in,t_in_min,t_in_max,t_out,t_out_min,t_out_max,pad1_on_s,pad2_on_s,stage,source,faults`
   (average/min/max over the interval, heater on-time in seconds).
 - `/sd/events.csv`: boot with reset cause, sensor ROM ids, every relay change, fault
-  set/clear, SD recovery, errors with message.
+  set/clear, SD recovery, errors with message. At 08:00 a `NIGHT` line with the night's
+  inside/outside min and max and the heating hours per pad:
+  `2026-11-08 08:00:41,52860,NIGHT,in_min=12.80 in_max=15.10 out_min=-4.20 out_max=2.00 pad1_h=3.10 pad2_h=0.40`.
 - `/sd/daily.csv`: one line per day: min/max inside and outside, on-hours per pad,
   all faults of the day.
 - Timestamps are local time (CET/CEST, switches automatically). The night of the
@@ -220,8 +239,8 @@ mpremote exec "from machine import Pin; import time; r = Pin(17, Pin.OUT, value=
 1. The LCD shows the color test: red, green, blue blocks and a white frame around the
    edge. Wrong colors or a cut-off frame: see [LCD settings](#lcd-settings).
 2. After a few seconds the normal screen: inside/outside temperature, clock,
-   `Stage 0 (in)`, `OK` in green.
-3. Green bar at the bottom, no flashing.
+   `Stage 0 in`. By day, the night values show `--.-` until 20:00.
+3. Green bar at the bottom with `OK`, no flashing.
 
 Yellow or red instead of `OK` (and the screen flashes every 10 s): the fault code on
 the LCD tells you what is missing, see [Fault codes](#fault-codes). Typical first-start
