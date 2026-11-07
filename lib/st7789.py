@@ -1,7 +1,27 @@
 # Minimal ST7789 / ST7735S driver for SPI displays.
-# The RP2040-LCD-0.96 uses an ST7735S; the commands used here are shared by both.
+# The RP2040-LCD-0.96 uses an ST7735S; the commands used here are shared by both,
+# except PANEL_TUNING, which is for the 0.96" 160x80 IPS panel of that board.
 
 import time
+
+# Frame rate, inversion, power, VCOM and gamma for the 0.96" panel, from Waveshare's
+# Pico-LCD-0.96 demo. Without them the panel's defaults make mixed colors (yellow) dull.
+PANEL_TUNING = (
+    (0xB1, b"\x05\x3a\x3a"),
+    (0xB2, b"\x05\x3a\x3a"),
+    (0xB3, b"\x05\x3a\x3a\x05\x3a\x3a"),
+    (0xB4, b"\x03"),
+    (0xC0, b"\x62\x02\x04"),
+    (0xC1, b"\xc0"),
+    (0xC2, b"\x0d\x00"),
+    (0xC3, b"\x8d\x6a"),
+    (0xC4, b"\x8d\xee"),
+    (0xC5, b"\x0e"),
+    (0xE0, bytes((0x10, 0x0E, 0x02, 0x03, 0x0E, 0x07, 0x02, 0x07,
+                  0x0A, 0x12, 0x27, 0x37, 0x00, 0x0D, 0x0E, 0x10))),
+    (0xE1, bytes((0x10, 0x0E, 0x03, 0x03, 0x0F, 0x06, 0x02, 0x08,
+                  0x0A, 0x13, 0x26, 0x36, 0x00, 0x0D, 0x0E, 0x10))),
+)
 
 
 class ST7789:
@@ -47,6 +67,10 @@ class ST7789:
         time.sleep_ms(150)
         self._write_cmd(0x11)  # SLPOUT
         time.sleep_ms(120)
+
+        for cmd, data in PANEL_TUNING:
+            self._write_cmd(cmd)
+            self._write_data(data)
 
         self._write_cmd(0x3A)  # COLMOD
         self._write_data(b"\x55")  # 16-bit

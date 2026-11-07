@@ -16,7 +16,7 @@ from datalog import DataLog
 from lib import ds3231
 from lib import st7789
 
-VERSION = "2.2"
+VERSION = "2.4"
 TICK_MS = 50
 RESET_WARN_S = 6 * 3600  # an unexpected (watchdog) reset is shown as warning this long
 ERROR_HOLD_S = 3600      # ERR stays active this long after the last failed loop cycle
@@ -98,13 +98,36 @@ def mono_ms():
     return _mono
 
 
+class Schedule:
+    """Due every interval_s. With a valid clock at round clock times (full minutes,
+    :00/:05/...), otherwise by uptime. A slot never repeats, so a clock set back a
+    little by the RTC sync does not run a cycle twice."""
+
+    def __init__(self, interval_s):
+        self.interval_s = interval_s
+        self.slot = None
+        self.next_ms = 0
+
+    def due(self, now_ms):
+        if time_valid:
+            slot = time.time() // self.interval_s
+            if self.slot is not None and slot <= self.slot:
+                return False
+            self.slot = slot
+            return True
+        if now_ms < self.next_ms:
+            return False
+        self.next_ms = now_ms + self.interval_s * 1000
+        return True
+
+
 # Colors
 BLACK = rgb565(0, 0, 0)
 WHITE = rgb565(255, 255, 255)
 RED = rgb565(220, 40, 40)
 GREEN = rgb565(40, 200, 80)
 BLUE = rgb565(40, 120, 200)
-YELLOW = rgb565(240, 200, 40)
+YELLOW = rgb565(255, 255, 0)  # pure yellow looks yellow on the tuned panel
 DARK = rgb565(50, 50, 50)
 GRAY = rgb565(140, 140, 140)
 LEVEL_COLORS = {status.OK: GREEN, status.WARN: YELLOW, status.ALARM: RED}
@@ -129,7 +152,8 @@ last_cycle_ms = None
 interval = Stats()
 day_stats = Stats()
 cur_day = None
-next_log_ms = 0
+cycle_schedule = Schedule(config.LOOP_INTERVAL_S)
+log_schedule = Schedule(config.LOG_INTERVAL_S)
 next_rtc_ms = 0
 next_sd_ms = 0
 next_scan_ms = 0
@@ -448,11 +472,7 @@ def setup():
 
 def control_cycle(now):
     global prev_relays, last_cycle_ms, interval, day_stats, cur_day
-    global next_log_ms, next_rtc_ms, next_sd_ms, next_scan_ms, last_t_in, last_t_out
-
-    if now >= next_rtc_ms:
-        next_rtc_ms = now + config.RTC_SYNC_S * 1000
-        faults.set("RTC", not sync_time(), status.WARN)
+    global next_rtc_ms, next_sd_ms, next_scan_ms, last_t_in, last_t_out
 
     if (sens.inside.value is None or sens.outside.value is None) and now >= next_scan_ms:
         next_scan_ms = now + config.SENSOR_RESCAN_S * 1000
@@ -510,8 +530,7 @@ def control_cycle(now):
         feed()
     faults.set("SD", not datalog.ok, status.WARN, datalog.error)
 
-    if now >= next_log_ms:
-        next_log_ms = now + config.LOG_INTERVAL_S * 1000
+    if log_schedule.due(now):
         write_measurement(now)
         interval = Stats()
 
@@ -524,6 +543,12 @@ def control_cycle(now):
             day_stats = Stats()
             faults.seen = set(faults.active)
             cur_day = day
+
+    # At the end of the cycle: the sync can move the clock by up to a second, which must
+    # not shift this cycle's timestamps
+    if now >= next_rtc_ms:
+        next_rtc_ms = now + config.RTC_SYNC_S * 1000
+        faults.set("RTC", not sync_time(), status.WARN)
     feed()
 
     if lcd is not None:
@@ -551,12 +576,10 @@ def guarded_cycle(now):
 
 def run():
     setup()
-    next_cycle = 0
     while True:
         now = mono_ms()
         feed()
-        if now >= next_cycle:
-            next_cycle = now + config.LOOP_INTERVAL_S * 1000
+        if cycle_schedule.due(now):  # at once after boot, then at full minutes
             end_flash()  # the cycle blocks for about 1 s: show the UI meanwhile
             guarded_cycle(now)
         update_flash(faults.level())

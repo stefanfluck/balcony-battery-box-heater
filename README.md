@@ -30,12 +30,13 @@ Heating control
 - Use the stronger pad (the one drawing more current at 5V) as pad 1, at the bottom on
   relay 1: it runs most of the time. Here: 1.23 A (6.2 W) as pad 1, 0.65 A (3.3 W) as
   pad 2.
-- Measuring and switching: both sensors are read once a minute (`LOOP_INTERVAL_S`), and
-  the relays can only change at that moment, so at most once a minute. The 2 °C gap
-  between on and off (stage 1: 13/15 °C, stage 2: 10/12 °C) keeps switching much rarer.
-  The display also updates once a minute. The 5 minutes (`LOG_INTERVAL_S`) are only the
-  log interval: each log line has the average, minimum and maximum of the last 5
-  readings.
+- Measuring and switching: both sensors are read at every full minute of the clock
+  (`LOOP_INTERVAL_S`; after a boot also once immediately), and the relays can only change at
+  that moment, so at most once a minute. The 2 °C gap between on and off (stage 1:
+  13/15 °C, stage 2: 10/12 °C) keeps switching much rarer. The display also updates
+  once a minute. The 5 minutes (`LOG_INTERVAL_S`) are only the log interval: each log
+  line, at :00, :05, :10 ..., has the average, minimum and maximum of the last 5
+  readings. Without a valid clock both run by uptime instead.
 - Fallback: inside sensor lost → control on the outside temperature (heats more, never
   less). Both sensors lost → `FAILSAFE_STAGE` (default: both pads on).
 - The outside sensor has no influence on normal heating, which uses the inside
@@ -103,7 +104,7 @@ Night pads  3.1h 0.4h
 - At boot: color test (red, green, blue blocks) and a white frame to check the offsets.
 
 Logging (SD card)
-- `/sd/log/YYYYMMDD.csv`, one file per day, a line every 5 minutes:
+- `/sd/log/YYYYMMDD.csv`, one file per day, a line every 5 minutes (at :00, :05, ...):
   `timestamp,uptime_s,t_in,t_in_min,t_in_max,t_out,t_out_min,t_out_max,pad1_on_s,pad2_on_s,stage,source,faults`
   (average/min/max over the interval, heater on-time in seconds).
 - `/sd/events.csv`: boot with reset cause, sensor ROM ids, every relay change, fault

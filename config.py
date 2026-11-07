@@ -88,8 +88,10 @@ UTC_OFFSET_H = 1
 DST_EU = True
 
 # Timing
-LOG_INTERVAL_S = 300
-LOOP_INTERVAL_S = 60
+# With a set clock both run at round clock times: the cycle at every full minute, the
+# log at :00, :05, :10 ... Use divisors of 3600 (60, 120, 300, 600, ...).
+LOG_INTERVAL_S = 300    # log line with average/min/max since the last one
+LOOP_INTERVAL_S = 60    # control cycle: read sensors, switch relays, update the display
 TEMP_DECIMALS = 1
 LOG_DIR = "/sd/log"             # one measurement file per day: YYYYMMDD.csv
 EVENT_PATH = "/sd/events.csv"
