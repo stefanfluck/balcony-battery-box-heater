@@ -38,7 +38,10 @@ Heating control
   line, at :00, :05, :10 ..., has the average, minimum and maximum of the last 5
   readings. Without a valid clock both run by uptime instead.
 - Fallback: inside sensor lost → control on the outside temperature (heats more, never
-  less). Both sensors lost → `FAILSAFE_STAGE` (default: both pads on).
+  less). Both sensors lost → `FAILSAFE_STAGE` (default: both pads on), but only while
+  the RTC chip temperature is at or below `FAILSAFE_RTC_ON` (15 °C); at or above
+  `FAILSAFE_RTC_OFF` (17 °C) the pads stay off, so a sensor failure in summer does not
+  heat (source `rtc`). RTC unreadable too → `FAILSAFE_STAGE` (source `failsafe`).
 - The outside sensor has no influence on normal heating, which uses the inside
   temperature only. It serves as the fallback above and for information on the display
   and in the logs: comparing inside and outside shows how well the box holds its heat
@@ -49,8 +52,9 @@ Fault handling
 - Every control cycle runs in its own error handler. An error is logged and the next
   cycle runs normally; after `MAX_CONSECUTIVE_ERRORS` in a row the board resets.
 - Hardware watchdog (8 s): a hang (e.g. a stuck SD card) resets the board.
-- A fatal error outside the control loop switches to failsafe heating with a red
-  flashing screen for 10 minutes, then resets.
+- A fatal error outside the control loop switches to failsafe heating (gated by the RTC
+  temperature as above, decided once) with a red flashing screen for 10 minutes, then
+  resets.
 - Sensors: a bad reading (CRC error, disconnected, 85 °C power-on value) is ignored;
   after `SENSOR_FAIL_COUNT` bad reads in a row the sensor counts as lost. The bus is
   re-scanned every 10 minutes while a sensor is missing.
@@ -93,7 +97,8 @@ Night pads  3.1h 0.4h
 - Clock, then inside and outside temperature: `now`, and `min`/`max` of the night
   (20:00–08:00). During the night it shows the running night, by day the last
   complete night.
-- Heating stage and control source (`in`, `out`, `failsafe`), pad boxes (red = heating).
+- Heating stage and control source (`in`, `out`, `rtc`, `failsafe`), pad boxes (red =
+  heating).
 - `Night pads`: how long pad 1 and pad 2 heated in that night. Close to 12 h means the
   pads have no reserve left.
 - Status bar over the full width: green OK, blue OK but below `STATUS_TEMP`, yellow
@@ -129,12 +134,60 @@ Logging (SD card)
 |---|---|---|---|
 | `COLD` | alarm | inside below `T_ALARM_LOW` (5 °C) | heaters, 5V supply, relays, box lid |
 | `HOT` | alarm | inside above `T_ALARM_HIGH` (40 °C) | sun on the box, shade it |
-| `SENS_IN` | alarm | inside sensor lost (heating runs on outside sensor / failsafe) | sensor cable |
+| `SENS_IN` | alarm | inside sensor lost (heating runs on outside sensor / RTC / failsafe) | sensor cable |
 | `SENS_OUT` | warning | outside sensor lost | sensor cable |
 | `SD` | warning | SD card missing or write failed | card, reinsert |
 | `RTC` | warning | RTC unreadable, stopped or not set | coin cell, [set the time](#setting-the-time) |
 | `ERR` | warning | a control cycle failed in the last hour | `events.csv` |
 | `RESET` | warning | board restarted by the watchdog in the last 6 h | `events.csv` |
+
+## Safety
+
+What protects the batteries, the box and the electronics, and what does not.
+
+Heating
+- Low-voltage pads (5V, about 9.4 W together), safe to run continuously.
+- Pads on the relays' NO contacts: without power, during a reset or with a loose IN
+  wire the pads are off. At boot the relays are switched off first.
+- On/off gaps of 2 °C on both stages, so the relays switch rarely.
+- Sensor readings are checked (CRC, the 85 °C power-on value, range). Only 3 bad reads
+  in a row count as a lost sensor; the bus is re-scanned every 10 minutes.
+- Fallback chain: inside sensor → outside sensor (heats more, never less) → RTC chip
+  temperature (failsafe heating only at or below 15 °C, so not in summer) →
+  `FAILSAFE_STAGE` if the RTC cannot be read either.
+- Alarms on the screen: `COLD` below 5 °C and `HOT` above 40 °C inside (red flash).
+  `HOT` only warns: the heating is already off above 15 °C.
+
+Firmware
+- Hardware watchdog (8 s): a hang resets the board.
+- Every control cycle runs in its own error handler; 5 failed cycles in a row reset the
+  board.
+- A fatal error outside the control loop: failsafe heating (RTC-gated) with a red
+  flashing screen for 10 minutes, then a reset.
+- SD card or RTC failures don't affect the heating: it needs neither the card nor the
+  time. Events wait in RAM until the card is back.
+- Ctrl-C / `mpremote` switches the pads off and the watchdog off. `padtest.py` switches
+  the pads off at the end, also on Ctrl-C.
+
+Electrical (WIRING.md)
+- Relay module with optocouplers; the relay coils run on their own supply (JD-VCC), the
+  inputs on 3.3V. Contacts rated 10 A, used at about 1.9 A.
+- No 5V on any RP2040 pin: RTC and relay inputs on 3.3V, the SD module's MISO checked
+  before connecting (Hardware checks 2).
+- Pad current goes from the supply directly through the relays, not through the board or
+  the breadboard.
+- The board has a diode between USB and VSYS; with the 5V supply on whenever USB is
+  plugged in, the PC's USB port never feeds the pads.
+- Rechargeable LIR2032 in the RTC module; never a normal CR2032 without removing the
+  charging resistor.
+
+Not covered
+- No over-temperature cutoff independent of the firmware: a relay contact that sticks
+  closed would keep heating. A bimetal thermostat switch (normally closed, opens at
+  about 40–45 °C, e.g. KSD301) in the 5V + line to the relays' COM would cover this.
+- No remote alarm: problems are only visible on the screen through the window.
+- The firmware cannot make LiPo storage itself safe: a fire-resistant container (LiPo
+  bag, metal box) remains important.
 
 ## First-time setup
 

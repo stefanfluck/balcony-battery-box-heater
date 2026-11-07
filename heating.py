@@ -1,12 +1,25 @@
 # Heating stage control. No hardware access.
 
 
+def failsafe_stage(cfg, t_rtc, prev=0):
+    """Stage when both sensors are lost: FAILSAFE_STAGE, but only while the RTC chip (in
+    the electronics enclosure) is cool, so a sensor failure in summer does not heat.
+    Between FAILSAFE_RTC_ON and _OFF the previous stage stays. Without an RTC reading:
+    FAILSAFE_STAGE."""
+    if t_rtc is None or t_rtc <= cfg.FAILSAFE_RTC_ON:
+        return cfg.FAILSAFE_STAGE
+    if t_rtc >= cfg.FAILSAFE_RTC_OFF:
+        return 0
+    return prev
+
+
 class Heating:
     """Two-stage control with hysteresis on both stages.
 
     stage 0: off, stage 1: primary pad, stage 2: both pads.
     Control temperature is the inside sensor, the outside sensor if the inside one
-    is lost, and FAILSAFE_STAGE if both are lost.
+    is lost. If both are lost: FAILSAFE_STAGE, gated by the RTC chip temperature
+    (source "rtc"), or without an RTC reading FAILSAFE_STAGE alone (source "failsafe").
     """
 
     def __init__(self, cfg, pads):
@@ -16,7 +29,7 @@ class Heating:
         self.primary = pads[0] if pads else 0
         self.source = "in"
 
-    def update(self, t_in, t_out):
+    def update(self, t_in, t_out, t_rtc=None):
         c = self.cfg
         if t_in is not None:
             t = t_in
@@ -26,11 +39,11 @@ class Heating:
             self.source = "out"
         else:
             t = None
-            self.source = "failsafe"
+            self.source = "failsafe" if t_rtc is None else "rtc"
 
         prev = self.stage
         if t is None:
-            stage = c.FAILSAFE_STAGE
+            stage = failsafe_stage(c, t_rtc, prev)
         elif t >= c.T_OFF:
             stage = 0
         elif t <= c.T_STAGE2_ON:

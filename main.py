@@ -16,7 +16,7 @@ from datalog import DataLog
 from lib import ds3231
 from lib import st7789
 
-VERSION = "2.5"
+VERSION = "2.6"
 TICK_MS = 50
 RESET_WARN_S = 6 * 3600  # an unexpected (watchdog) reset is shown as warning this long
 ERROR_HOLD_S = 3600      # ERR stays active this long after the last failed loop cycle
@@ -489,6 +489,7 @@ def control_cycle(now):
         next_scan_ms = now + config.SENSOR_RESCAN_S * 1000
         sens.scan()
     t_in, t_out = sens.read()
+    t_rtc = rtc_temperature()
     last_t_in, last_t_out = t_in, t_out
     feed()
     faults.set("SENS_IN", t_in is None, status.ALARM, sensors.rom_hex(sens.inside.rom))
@@ -506,13 +507,14 @@ def control_cycle(now):
 
     prev_stage = heat.stage
     prev_source = heat.source
-    relays = heat.update(t_in, t_out)
+    relays = heat.update(t_in, t_out, t_rtc)
     set_relays(relays)
     if heat.source != prev_source:
         log_event("SOURCE", heat.source)
     if relays != prev_relays:
-        log_event("STAGE", "%d->%d pads=%d%d in=%s out=%s" % (
-            prev_stage, heat.stage, relays[0], relays[1], fmt(t_in, "-"), fmt(t_out, "-")))
+        log_event("STAGE", "%d->%d pads=%d%d in=%s out=%s rtc=%s" % (
+            prev_stage, heat.stage, relays[0], relays[1],
+            fmt(t_in, "-"), fmt(t_out, "-"), fmt(t_rtc, "-")))
     prev_relays = relays
 
     if t_in is not None:
@@ -528,7 +530,7 @@ def control_cycle(now):
 
     interval.t_in.add(t_in)
     interval.t_out.add(t_out)
-    interval.t_rtc.add(rtc_temperature())
+    interval.t_rtc.add(t_rtc)
     day_stats.t_in.add(t_in)
     day_stats.t_out.add(t_out)
     nt = update_night(t_in, t_out)
@@ -600,12 +602,14 @@ def run():
 
 def fatal_failsafe():
     # Setup or the main loop died outside the per-cycle error handling. Keep heating
-    # in failsafe mode with a red flashing screen for a while, then try a fresh start.
-    on = [config.FAILSAFE_STAGE >= 2, config.FAILSAFE_STAGE >= 2]
-    if config.FAILSAFE_STAGE == 1:
+    # in failsafe mode (gated by the RTC temperature, as with both sensors lost) with a
+    # red flashing screen for a while, then try a fresh start.
+    stage = heating.failsafe_stage(config, rtc_temperature())
+    on = [stage >= 2, stage >= 2]
+    if stage == 1:
         on[0 if relay_pins[0] is not None else 1] = True
     set_relays(on)
-    show_message(RED, "FATAL ERROR", "failsafe heating", "stage %d" % config.FAILSAFE_STAGE,
+    show_message(RED, "FATAL ERROR", "failsafe heating", "stage %d" % stage,
                  "reset in %d min" % (FATAL_FAILSAFE_S // 60))
     end = mono_ms() + FATAL_FAILSAFE_S * 1000
     while mono_ms() < end:

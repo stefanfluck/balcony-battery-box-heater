@@ -15,6 +15,11 @@ ROTATE_PADS = False
 # Stage used when neither sensor gives a valid reading (pads are 5V and safe to run
 # continuously). If only the inside sensor fails, the outside sensor is used instead.
 FAILSAFE_STAGE = 2
+# ... but only while the RTC chip (DS3231, in the electronics enclosure, about +-3 C)
+# reads at or below FAILSAFE_RTC_ON, and off again at or above FAILSAFE_RTC_OFF, so a
+# sensor failure in summer does not heat. Without an RTC reading FAILSAFE_STAGE applies.
+FAILSAFE_RTC_ON = 15.0
+FAILSAFE_RTC_OFF = 17.0
 
 # Alarms on the inside temperature (C)
 T_ALARM_LOW = 5.0     # red below
