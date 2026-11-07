@@ -273,6 +273,40 @@ memory and remounts the card within 10 minutes after it is back.
 
 Connect USB, edit `config.py` on the PC, `mpremote cp config.py :`, `mpremote reset`.
 
+## Bench test commands
+
+Run them in the project folder, with the 5V supply on first, then USB. Each command stops
+the firmware (watchdog off, pads off); afterwards switch the power off and on (or
+`mpremote reset`, which shows `RESET` for 6 h).
+
+Relays: switch each one on for 5 seconds (relay clicks, its LED lights; GP16 = pad 1,
+GP17 = pad 2):
+
+```
+mpremote exec "from machine import Pin; import time; r = Pin(16, Pin.OUT, value=1); r(0); time.sleep(5); r(1)"
+mpremote exec "from machine import Pin; import time; r = Pin(17, Pin.OUT, value=1); r(0); time.sleep(5); r(1)"
+```
+
+(With MOSFET modules swap the values: `value=0`, `r(1)` on, `r(0)` off.)
+
+Heating stages, with the pads connected: stage 1 (pad 1) for 1 minute, stage 2 (both
+pads) for 1 minute, then off. Prints both temperatures every 10 s. Ctrl-C stops it early,
+the pads are switched off in any case. `mpremote run` runs the file from the PC, it does
+not need to be on the board.
+
+```
+mpremote run padtest.py
+```
+
+While it runs: feel that the right pad warms up in each stage, and measure the 5V rail in
+stage 2 (both pads on): it should stay at about 4.75 V or more.
+
+Sensors with their ids and live temperatures (1 minute, see Setup step 7):
+
+```
+mpremote exec "import sensorid"
+```
+
 ## LCD settings
 
 If the color test at boot is wrong: toggle `LCD_BGR` (red and blue swapped), then
@@ -357,4 +391,5 @@ to speed up the start.
 | `datalog.py` | SD mount/remount, CSV files |
 | `settime.py` | sets the RTC to UTC |
 | `sensorid.py` | lists the sensor ids with live temperatures (setup) |
+| `padtest.py` | runs heating stage 1 and 2 for 1 minute each (bench test, `mpremote run`) |
 | `lib/` | drivers: official `sdcard.py`, `ds3231.py`, `st7789.py` (also ST7735S) |
