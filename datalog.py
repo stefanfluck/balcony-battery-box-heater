@@ -8,7 +8,7 @@ from machine import Pin, SPI
 from lib import sdcard
 
 MEAS_HEADER = ("timestamp,uptime_s,t_in,t_in_min,t_in_max,t_out,t_out_min,t_out_max,"
-               "pad1_on_s,pad2_on_s,stage,source,faults\n")
+               "pad1_on_s,pad2_on_s,stage,source,faults,t_rtcmodule\n")
 EVENT_HEADER = "timestamp,uptime_s,event,detail\n"
 DAILY_HEADER = "date,t_in_min,t_in_max,t_out_min,t_out_max,pad1_on_h,pad2_on_h,faults\n"
 MAX_PENDING = 100

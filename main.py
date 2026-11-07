@@ -16,7 +16,7 @@ from datalog import DataLog
 from lib import ds3231
 from lib import st7789
 
-VERSION = "2.4"
+VERSION = "2.5"
 TICK_MS = 50
 RESET_WARN_S = 6 * 3600  # an unexpected (watchdog) reset is shown as warning this long
 ERROR_HOLD_S = 3600      # ERR stays active this long after the last failed loop cycle
@@ -82,6 +82,7 @@ class Stats:
     def __init__(self):
         self.t_in = Agg()
         self.t_out = Agg()
+        self.t_rtc = Agg()  # DS3231 chip, in the electronics enclosure (log only)
         self.on_s = [0.0, 0.0]
 
 
@@ -224,6 +225,16 @@ def sync_time():
     machine.RTC().datetime((year, month, mday, (weekday - 1) % 7, hour, minute, sec, 0))  # RTC weekday 1-7
     time_valid = True
     return True
+
+
+def rtc_temperature():
+    # Temperature of the DS3231 chip, None if unreadable (the RTC fault covers that)
+    if ext_rtc is None:
+        return None
+    try:
+        return ext_rtc.temperature()
+    except Exception:
+        return None
 
 
 def _last_sunday_1utc(year, month):
@@ -382,12 +393,12 @@ def end_flash():
 
 def write_measurement(now):
     s = interval
-    line = "%s,%d,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s,%s\n" % (
+    line = "%s,%d,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s,%s,%s\n" % (
         timestamp(), now // 1000,
         fmt(s.t_in.avg()), fmt(s.t_in.min), fmt(s.t_in.max),
         fmt(s.t_out.avg()), fmt(s.t_out.min), fmt(s.t_out.max),
         int(s.on_s[0]), int(s.on_s[1]), heat.stage, heat.source,
-        " ".join(faults.codes()),
+        " ".join(faults.codes()), fmt(s.t_rtc.avg()),
     )
     datalog.measurement(today(), line)
 
@@ -517,6 +528,7 @@ def control_cycle(now):
 
     interval.t_in.add(t_in)
     interval.t_out.add(t_out)
+    interval.t_rtc.add(rtc_temperature())
     day_stats.t_in.add(t_in)
     day_stats.t_out.add(t_out)
     nt = update_night(t_in, t_out)

@@ -105,8 +105,12 @@ Night pads  3.1h 0.4h
 
 Logging (SD card)
 - `/sd/log/YYYYMMDD.csv`, one file per day, a line every 5 minutes (at :00, :05, ...):
-  `timestamp,uptime_s,t_in,t_in_min,t_in_max,t_out,t_out_min,t_out_max,pad1_on_s,pad2_on_s,stage,source,faults`
-  (average/min/max over the interval, heater on-time in seconds).
+  `timestamp,uptime_s,t_in,t_in_min,t_in_max,t_out,t_out_min,t_out_max,pad1_on_s,pad2_on_s,stage,source,faults,t_rtcmodule`
+  (average/min/max over the interval, heater on-time in seconds). `t_rtcmodule` is the
+  average temperature of the DS3231 chip, i.e. of the electronics enclosure, slightly
+  warmed by the board: 0.25 °C steps, about ±3 °C, for information only. A day file
+  started by an older version keeps its old header; the column appears in its header
+  from the next day on.
 - `/sd/events.csv`: boot with reset cause, sensor ROM ids, every relay change, fault
   set/clear, SD recovery, errors with message. At 08:00 a `NIGHT` line with the night's
   inside/outside min and max and the heating hours per pad:

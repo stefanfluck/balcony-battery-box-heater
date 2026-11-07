@@ -34,6 +34,13 @@ class DS3231:
         year = self._bcd2bin(data[6]) + 2000
         return (year, month, mday, weekday, hour, minute, sec, 0)
 
+    def temperature(self):
+        # Chip temperature in C: 0.25 C steps, about +-3 C, updated every 64 s
+        msb, lsb = self.i2c.readfrom_mem(self.addr, 0x11, 2)
+        if msb & 0x80:
+            msb -= 256  # two's complement
+        return msb + (lsb >> 6) * 0.25
+
     def halted(self):
         # OSF: the oscillator stopped at some point, e.g. a power cut with a flat coin
         # cell. The time may look plausible but is wrong until it is set again.
