@@ -41,7 +41,7 @@ counted down one side and back up the other. Check against the labels on the boa
 | 20 | GP15 | DS18B20 data |
 | 21 | GP16 | relay IN1 |
 | 22 | GP17 | relay IN2 |
-| 36 | 3V3 (output) | relay VCC, DS3231 VCC, DS18B20 adapter VCC (one pin, several wires: use a small terminal) |
+| 36 | 3V3 (output) | relay VCC (jumper header), DS3231 VCC, DS18B20 adapter VCC (one pin, several wires: use a small terminal) |
 | 39 | VSYS (input) | 5V supply + through the Schottky diode |
 | 3, 8, 13, 18, 23, 28, 38 | GND | module GNDs, 5V supply − |
 | 37 | 3V3_EN | leave open |
@@ -72,18 +72,20 @@ GP25 backlight. Don't connect anything else to these.
 - Remove the jumper between VCC and JD-VCC. The relay coils then run on JD-VCC (5V
   supply) and the inputs on VCC (board 3V3): an input at 3.3V leaves the optocoupler
   fully off.
-- Jumper header:
+- Jumper header (all three pins used, the jumper is off):
   - JD-VCC -> 5V supply +
-  - GND (next to JD-VCC) -> 5V supply −
+  - VCC (middle) -> board 3V3
+  - GND -> GND (common ground)
 - Input header:
-  - VCC -> board 3V3
-  - GND -> board GND
   - IN1 -> GP16 (pad 1: bottom pad, runs first)
   - IN2 -> GP17 (pad 2: side wall pad)
+  - VCC and GND: leave open. On this module they are the same connections as VCC and
+    GND on the jumper header (check with the meter: continuity between the two VCC pins
+    and between the two GND pins).
 - Check that each relay clicks at 0V and releases at 3.3V on IN (see README, Hardware
   checks). Only if a relay does not click (its LED may light dimly): put the jumper
-  back **and disconnect VCC from the board 3V3** (VCC then gets 5V through the jumper;
-  with both connected the 5V supply would push into the board's 3.3V). Then check again
+  back **and remove the 3V3 wire from VCC** (VCC then gets 5V through the jumper; with
+  both connected the 5V supply would push into the board's 3.3V). Then check again
   that it releases at 3.3V.
 - Contacts: 5V supply + -> COM1 and COM2, NO1 -> pad 1 +, NO2 -> pad 2 +, both pads −
   -> 5V supply −. NC stays open.
